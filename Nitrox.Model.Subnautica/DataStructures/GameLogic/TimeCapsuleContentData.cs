@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.Serialization;
+using System.Text.RegularExpressions;
 using BinaryPack.Attributes;
 
 namespace Nitrox.Model.Subnautica.DataStructures.GameLogic;
@@ -41,10 +42,36 @@ public class TimeCapsuleContentData
     public TimeCapsuleContentData(string key, string title, string text, string imageUrl)
     {
         Key = key;
-        Title = Truncate(title, MAX_TITLE_LENGTH);
-        Text = Truncate(text, MAX_TEXT_LENGTH);
-        ImageUrl = Truncate(imageUrl, MAX_IMAGE_URL_LENGTH);
+        Title = title;
+        Text = text;
+        ImageUrl = imageUrl;
+        Sanitize();
     }
+
+    /// <summary>
+    ///     True for an address relative to the game's image host (<c>capsule.jpg</c>, <c>images/2017/capsule.jpg</c>). The game hands the address to
+    ///     <c>ScreenshotManager</c>, which replaces the image host by any rooted address (<c>//host/a.png</c>, <c>\\host\share\a.png</c>, <c>C:\a.png</c>)
+    ///     and then downloads it: another player could make every game that opens the entry connect to a server of their choosing and save its answer.
+    ///     <c>\A</c> and <c>\z</c> on purpose: <c>$</c> also matches before a final line break.
+    /// </summary>
+    public static bool IsSafeImageUrl(string? url)
+    {
+        return url != null && SafeImageUrl.IsMatch(url) && !url.Contains("..");
+    }
+
+    /// <summary>
+    ///     Cuts the texts to their limits and drops an image address that <see cref="IsSafeImageUrl" /> refuses (the entry then shows no picture). Content
+    ///     that arrives in a packet or from a saved world is built without the constructor, so whoever receives it calls this before using or storing it.
+    /// </summary>
+    public void Sanitize()
+    {
+        Title = Truncate(Title, MAX_TITLE_LENGTH);
+        Text = Truncate(Text, MAX_TEXT_LENGTH);
+        string imageUrl = Truncate(ImageUrl, MAX_IMAGE_URL_LENGTH);
+        ImageUrl = IsSafeImageUrl(imageUrl) ? imageUrl : string.Empty;
+    }
+
+    private static readonly Regex SafeImageUrl = new(@"\A[A-Za-z0-9_-][A-Za-z0-9_./-]{0,499}\z", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static string Truncate(string value, int maxLength)
     {

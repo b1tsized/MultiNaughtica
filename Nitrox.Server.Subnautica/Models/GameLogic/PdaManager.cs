@@ -13,6 +13,10 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic;
 /// </summary>
 internal sealed class PdaManager(ILogger<PdaManager> logger) : ISummarize
 {
+    public const int MAX_ENCYCLOPEDIA_KEY_LENGTH = 128;
+    public const int MAX_ENCYCLOPEDIA_ENTRIES = 4096;
+    public const int MAX_TIME_CAPSULE_CONTENTS = 256;
+
     private readonly ILogger<PdaManager> logger = logger;
 
     private readonly Lock pdaStateLock = new();
@@ -21,6 +25,10 @@ internal sealed class PdaManager(ILogger<PdaManager> logger) : ISummarize
     ///     Any access to this state must use the same thread-safe lock to avoid one list being updated based on the invalid
     ///     state of another.
     /// </summary>
+    /// <remarks>
+    ///     A loaded world may hold time capsule content that an older build stored unchecked (an image address of another host): it is cleaned here, before it
+    ///     reaches the initial sync of anybody.
+    /// </remarks>
     public PdaStateData PdaState
     {
         private get;
@@ -28,6 +36,17 @@ internal sealed class PdaManager(ILogger<PdaManager> logger) : ISummarize
         {
             lock (pdaStateLock)
             {
+                if (value != null)
+                {
+                    foreach (TimeCapsuleContentData content in value.TimeCapsuleContents)
+                    {
+                        content?.Sanitize();
+                    }
+                    if (value.TimeCapsuleContents.Count > MAX_TIME_CAPSULE_CONTENTS)
+                    {
+                        value.TimeCapsuleContents.RemoveRange(MAX_TIME_CAPSULE_CONTENTS, value.TimeCapsuleContents.Count - MAX_TIME_CAPSULE_CONTENTS);
+                    }
+                }
                 field = value;
             }
         }
@@ -90,8 +109,8 @@ internal sealed class PdaManager(ILogger<PdaManager> logger) : ISummarize
         }
     }
 
-    /// <param name="content">The content of a time capsule entry, kept with it when the entry is new</param>
-    /// <returns>False if the entry was already known</returns>
+    /// <param name="content">The content of a time capsule entry, kept with it when the entry is new. It is cleaned in place (<see cref="TimeCapsuleContentData.Sanitize" />), so the packet that carries it is relayed clean.</param>
+    /// <returns>False if the entry was already known or is refused (empty, too long, or the list is full)</returns>
     public bool AddEncyclopediaEntry(string entry, TimeCapsuleContentData content = null)
     {
         bool duplicateAttempt = false;
@@ -99,6 +118,12 @@ internal sealed class PdaManager(ILogger<PdaManager> logger) : ISummarize
         {
             lock (pdaStateLock)
             {
+                // Every entry goes into the save and into the initial sync of every player who joins: a client must not be able to grow them without end
+                if (string.IsNullOrEmpty(entry) || entry.Length > MAX_ENCYCLOPEDIA_KEY_LENGTH || PdaState.EncyclopediaEntries.Count >= MAX_ENCYCLOPEDIA_ENTRIES)
+                {
+                    logger.ZLogWarning($"Refused the encyclopedia entry [{entry?.Length ?? 0} characters]: empty, longer than {MAX_ENCYCLOPEDIA_KEY_LENGTH} characters, or the {MAX_ENCYCLOPEDIA_ENTRIES} entries are reached");
+                    return false;
+                }
                 if (PdaState.EncyclopediaEntries.Contains(entry))
                 {
                     duplicateAttempt = true;
@@ -107,7 +132,15 @@ internal sealed class PdaManager(ILogger<PdaManager> logger) : ISummarize
                 PdaState.EncyclopediaEntries.Add(entry);
                 if (content != null && content.Key == entry)
                 {
-                    PdaState.TimeCapsuleContents.Add(content);
+                    content.Sanitize();
+                    if (PdaState.TimeCapsuleContents.Count < MAX_TIME_CAPSULE_CONTENTS)
+                    {
+                        PdaState.TimeCapsuleContents.Add(content);
+                    }
+                    else
+                    {
+                        logger.ZLogWarning($"Did not keep the content of the time capsule [{entry}]: the {MAX_TIME_CAPSULE_CONTENTS} contents are reached");
+                    }
                 }
                 return true;
             }
