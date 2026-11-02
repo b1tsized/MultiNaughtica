@@ -22,7 +22,17 @@ internal sealed class DefaultServerPacketProcessor(ILogger<DefaultServerPacketPr
         typeof(CyclopsEngineerState),
         // The state of a drone bay (which drone it holds, whether it is docked) is the server's alone (CyclopsDroneBayProcessor decides it from the requests): relayed, a client could put any Cyclops' drone into its
         // dock or out of it for everybody
-        typeof(CyclopsDroneState)
+        typeof(CyclopsDroneState),
+        // Only the server sends these, from admin commands (the debug packets) and from the save loop (the saving notice): relayed, any player could run console
+        // commands, spawn, warp or damage in every other player's game of a Debug build, or show everybody a fake "Saving..."
+        typeof(DebugConsoleCommand),
+        typeof(DebugDamageCreature),
+        typeof(DebugSpawnEntity),
+        typeof(DebugStartMapPacket),
+        typeof(DebugStoryDump),
+        typeof(DebugSyncSamplerControl),
+        typeof(DebugWarpInto),
+        typeof(ServerSaving)
     ];
 
     private readonly ILogger<DefaultServerPacketProcessor> logger = logger;
