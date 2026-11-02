@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.Serialization;
 using BinaryPack.Attributes;
@@ -64,8 +65,22 @@ namespace Nitrox.Model.DataStructures.Unity
             }
         }
 
+        /// <exception cref="InvalidOperationException">
+        ///     <paramref name="parent" /> is this transform or one of its children: every position and rotation read would recurse through the cycle until the stack
+        ///     overflowed, which no catch survives.
+        /// </exception>
         public void SetParent(NitroxTransform? parent, bool worldPositionStays = true)
         {
+            // NitroxTransform keeps reference equality, so the set compares instances (ReferenceEqualityComparer does not exist on net472)
+            HashSet<NitroxTransform> visited = [];
+            for (NitroxTransform? ancestor = parent; ancestor != null; ancestor = ancestor.Parent)
+            {
+                if (ReferenceEquals(ancestor, this) || !visited.Add(ancestor))
+                {
+                    throw new InvalidOperationException("A transform cannot be put under itself or under one of its own children");
+                }
+            }
+
             if (!worldPositionStays)
             {
                 Parent = parent;

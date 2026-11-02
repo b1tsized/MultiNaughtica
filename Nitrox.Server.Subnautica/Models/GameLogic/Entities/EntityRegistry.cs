@@ -435,6 +435,13 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
         {
             if (entity.ParentId != null)
             {
+                // A client names the parent of what it spawns: under itself or under one of its own children, the child walk of AddOrUpdate would never end
+                if (WouldCreateCycle(entity.Id, entity.ParentId))
+                {
+                    logger.ZLogWarning($"Refused to add {entity.Id} under {entity.ParentId}, which is the entity itself or one of its children: it is added without a parent");
+                    entity.ParentId = null;
+                    return;
+                }
                 Optional<Entity> parent = GetEntityById(entity.ParentId);
 
                 if (parent.HasValue)
@@ -474,38 +481,56 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
             }
         }
 
-        public void ReparentEntity(NitroxId? entityId, NitroxId? newParentId)
+        /// <returns>False when the entity is unknown or the move is refused (see <see cref="ReparentEntity(Entity?, Entity?)" />)</returns>
+        public bool ReparentEntity(NitroxId? entityId, NitroxId? newParentId)
         {
             if (entityId == null || !TryGetEntityById(entityId, out Entity entity))
             {
                 logger.ZLogError($"Could not find entity to reparent: {entityId}");
-                return;
+                return false;
             }
-            ReparentEntity(entity, newParentId);
+            return ReparentEntity(entity, newParentId);
         }
 
-        public void ReparentEntity(NitroxId entityId, Entity newParent)
+        /// <returns>False when the entity is unknown or the move is refused (see <see cref="ReparentEntity(Entity?, Entity?)" />)</returns>
+        public bool ReparentEntity(NitroxId entityId, Entity newParent)
         {
             if (entityId == null || !TryGetEntityById(entityId, out Entity entity))
             {
                 logger.ZLogError($"Could not find entity to reparent: {entityId}");
-                return;
+                return false;
             }
-            ReparentEntity(entity, newParent);
+            return ReparentEntity(entity, newParent);
         }
 
-        public void ReparentEntity(Entity? entity, NitroxId? newParentId)
+        /// <returns>False when the move is refused (see <see cref="ReparentEntity(Entity?, Entity?)" />)</returns>
+        public bool ReparentEntity(Entity? entity, NitroxId? newParentId)
         {
             Entity parentEntity = newParentId != null ? GetEntityById(newParentId).Value : null;
-            ReparentEntity(entity, parentEntity);
+            return ReparentEntity(entity, parentEntity);
         }
 
-        public void ReparentEntity(Entity? entity, Entity? newParent)
+        /// <summary>
+        ///     Moves <paramref name="entity" /> under <paramref name="newParent" /> (or to no parent). A parent that is the entity itself or one of its own children is
+        ///     refused and the entity stays where it was: such a cycle made every position read of the transform recurse until the stack overflowed, which ends the
+        ///     server process, and a client names the parent in several packets.
+        /// </summary>
+        /// <returns>False when the move is refused.</returns>
+        public bool ReparentEntity(Entity? entity, Entity? newParent)
         {
+            if (entity == null)
+            {
+                return false;
+            }
+            if (newParent != null && (newParent.Id.Equals(entity.Id) || WouldCreateCycle(entity.Id, newParent.ParentId)))
+            {
+                logger.ZLogWarning($"Refused to move {entity.Id} under {newParent.Id}, which is the entity itself or one of its children");
+                return false;
+            }
             RemoveFromParent(entity);
             if (newParent == null)
             {
-                return;
+                return true;
             }
             if (entity is WorldEntity worldEntity && worldEntity.Transform != null &&
                 newParent is WorldEntity parentWorldEntity && parentWorldEntity.Transform != null)
@@ -514,6 +539,34 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
             }
             entity.ParentId = newParent.Id;
             newParent.ChildEntities.Add(entity);
+            return true;
+        }
+
+        /// <summary>
+        ///     Whether putting the entity <paramref name="entityId" /> under <paramref name="newParentId" /> would make it its own ancestor: the parent is the entity
+        ///     itself, or the entity is found going up from the parent. A parent chain that already loops counts as a cycle too.
+        /// </summary>
+        public bool WouldCreateCycle(NitroxId entityId, NitroxId? newParentId)
+        {
+            if (newParentId == null)
+            {
+                return false;
+            }
+            if (newParentId.Equals(entityId))
+            {
+                return true;
+            }
+            HashSet<NitroxId> visited = [newParentId];
+            NitroxId current = newParentId;
+            while (TryGetEntityById(current, out Entity ancestor) && ancestor.ParentId != null)
+            {
+                if (ancestor.ParentId.Equals(entityId) || !visited.Add(ancestor.ParentId))
+                {
+                    return true;
+                }
+                current = ancestor.ParentId;
+            }
+            return false;
         }
 
         public void TransferChildren(NitroxId parentId, NitroxId newParentId, Func<Entity, bool> filter = null)

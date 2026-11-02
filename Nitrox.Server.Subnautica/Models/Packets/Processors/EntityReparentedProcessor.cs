@@ -32,7 +32,12 @@ internal sealed class EntityReparentedProcessor(EntityRegistry entityRegistry, C
             return;
         }
 
-        entityRegistry.ReparentEntity(packet.Id, packet.NewParentId);
+        // Refused (the new parent is the entity itself or one of its children): the other players must not get it either
+        if (!entityRegistry.ReparentEntity(packet.Id, packet.NewParentId))
+        {
+            logger.ZLogWarning($"{context.Sender.Name} tried to move {packet.Id} under {packet.NewParentId}, which is the entity itself or one of its children: not done and not relayed");
+            return;
+        }
         await context.SendToOthersAsync(packet);
     }
 }
