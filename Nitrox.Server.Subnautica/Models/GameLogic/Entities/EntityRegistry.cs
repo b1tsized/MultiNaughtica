@@ -544,7 +544,8 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
 
         /// <summary>
         ///     Whether putting the entity <paramref name="entityId" /> under <paramref name="newParentId" /> would make it its own ancestor: the parent is the entity
-        ///     itself, or the entity is found going up from the parent. A parent chain that already loops counts as a cycle too.
+        ///     itself, or the entity is found going up from the parent. A parent chain that already loops without the entity (a damaged save) ends the walk: the
+        ///     entity is not part of that loop, so the move makes no new one.
         /// </summary>
         public bool WouldCreateCycle(NitroxId entityId, NitroxId? newParentId)
         {
@@ -560,9 +561,13 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
             NitroxId current = newParentId;
             while (TryGetEntityById(current, out Entity ancestor) && ancestor.ParentId != null)
             {
-                if (ancestor.ParentId.Equals(entityId) || !visited.Add(ancestor.ParentId))
+                if (ancestor.ParentId.Equals(entityId))
                 {
                     return true;
+                }
+                if (!visited.Add(ancestor.ParentId))
+                {
+                    return false;
                 }
                 current = ancestor.ParentId;
             }

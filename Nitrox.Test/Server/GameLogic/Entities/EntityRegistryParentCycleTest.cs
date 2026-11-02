@@ -154,6 +154,21 @@ public class EntityRegistryParentCycleTest
         registry.TryGetEntityById(id, out Entity? _).Should().BeTrue();
     }
 
+    [TestMethod]
+    public void AMoveUnderAParentChainThatAlreadyLoopsEndsAndIsNoNewCycle()
+    {
+        // Two entities that name each other as parent (only a damaged save or a raw AddEntity makes this): the walk must end, and the entity moved under them is not
+        // part of their loop, so the move makes no new cycle
+        PlayerEntity a = Add(root);
+        PlayerEntity first = New(new NitroxId(), null);
+        PlayerEntity second = New(new NitroxId(), first.Id);
+        first.ParentId = second.Id;
+        registry.AddEntity(first);
+        registry.AddEntity(second);
+
+        registry.WouldCreateCycle(a.Id, first.Id).Should().BeFalse();
+    }
+
     private PlayerEntity Add(Entity? parent)
     {
         PlayerEntity entity = New(new NitroxId(), parent?.Id);
