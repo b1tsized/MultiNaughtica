@@ -20,7 +20,7 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Services;
 
-internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, IKickPlayer, ISessionCleaner
+internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, IKickPlayer, ISessionCleaner, ISessionActivity
 {
     private readonly Dictionary<int, PeerContext> contextByPeerId = [];
     private readonly Dictionary<SessionId, PeerContext> contextBySessionId = [];
@@ -179,6 +179,15 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
         await Task.Delay(100); // Give time for LiteNetLib to send the packet out before disconnecting. Otherwise, no kick modal will show on client.
         server.DisconnectPeer(context.Peer); // This will trigger client disconnect, which will handle the session (data) migration.
         return true;
+    }
+
+    public TimeSpan? GetTimeSinceLastPacket(SessionId sessionId)
+    {
+        lock (contextLock)
+        {
+            // LiteNetLib counts it in milliseconds and resets it on every packet received from the peer, keep-alive pings included
+            return contextBySessionId.TryGetValue(sessionId, out PeerContext context) ? TimeSpan.FromMilliseconds(context.Peer.TimeSinceLastPacket) : null;
+        }
     }
 
     async Task IEvent<ISessionCleaner.Args>.OnEventAsync(ISessionCleaner.Args args)

@@ -72,28 +72,14 @@ internal sealed partial class PlayerManager(SessionManager sessionManager, BanSe
         PlayerSettings playerSettings,
         AuthenticationContext authenticationContext)
     {
-        if (banService.IsBanned(endPoint.Address))
+        if (CheckAdmission(sessionId, endPoint, authenticationContext) is { } rejection)
         {
-            MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.PLAYER_BANNED;
-            return new MultiplayerSessionReservation(sessionId, rejectedState, banService.GetBanRejectionDetail(endPoint.Address));
+            return rejection;
         }
 
         if (sessionManager.GetSessionCount() > options.Value.MaxConnections)
         {
             MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.SERVER_PLAYER_CAPACITY_REACHED;
-            return new MultiplayerSessionReservation(sessionId, rejectedState);
-        }
-
-        if (!string.IsNullOrEmpty(options.Value.ServerPassword) && (!authenticationContext.ServerPassword.HasValue || authenticationContext.ServerPassword.Value != options.Value.ServerPassword))
-        {
-            MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.AUTHENTICATION_FAILED;
-            return new MultiplayerSessionReservation(sessionId, rejectedState);
-        }
-
-
-        if (!PlayerNameRegex().IsMatch(authenticationContext.Username))
-        {
-            MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.INCORRECT_USERNAME;
             return new MultiplayerSessionReservation(sessionId, rejectedState);
         }
 
@@ -130,11 +116,68 @@ internal sealed partial class PlayerManager(SessionManager sessionManager, BanSe
     }
 
     /// <summary>
+    ///     How long a session must have sent nothing before a new connection under its name may evict it. A live client sends at least a ping every second, and a
+    ///     game that crashed takes far longer than this to be started again; a briefly stalled client stays well below it.
+    /// </summary>
+    public static readonly TimeSpan STALE_SESSION_SILENCE = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    ///     Finds the session that a crashed client left behind under the name of <paramref name="authenticationContext" />, so the player can come back right away
+    ///     instead of waiting for the old connection to time out. Only a request that would itself be admitted (not banned, right password, valid name) may evict,
+    ///     only a session from the same IP address, and only one that has been silent for <see cref="STALE_SESSION_SILENCE" />: anybody else behind that address
+    ///     could otherwise kick a player that is still playing, over and over, without knowing the password.
+    /// </summary>
+    /// <param name="timeSinceLastPacket">How long a session has sent nothing, or null when it has no connection any more.</param>
+    public bool TryFindEvictableSession(SessionId requestingSessionId, IPEndPoint requestingEndPoint, AuthenticationContext authenticationContext, Func<SessionId, TimeSpan?> timeSinceLastPacket,
+                                        out SessionId staleSessionId)
+    {
+        staleSessionId = default;
+        if (CheckAdmission(requestingSessionId, requestingEndPoint, authenticationContext) != null ||
+            !TryFindStaleSession(authenticationContext.Username, requestingSessionId, requestingEndPoint.Address, out SessionId candidate))
+        {
+            return false;
+        }
+        if (timeSinceLastPacket(candidate) is { } silence && silence < STALE_SESSION_SILENCE)
+        {
+            logger.ZLogWarning($"{authenticationContext.Username} connected again from the same address while session #{candidate} is still active ({silence.TotalSeconds:F1} s since its last packet): it is not evicted");
+            return false;
+        }
+        staleSessionId = candidate;
+        return true;
+    }
+
+    /// <summary>
+    ///     The checks on who is asking: the ban list, the server password and the player name. Null when they pass.
+    /// </summary>
+    private MultiplayerSessionReservation? CheckAdmission(SessionId sessionId, IPEndPoint endPoint, AuthenticationContext authenticationContext)
+    {
+        if (banService.IsBanned(endPoint.Address))
+        {
+            MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.PLAYER_BANNED;
+            return new MultiplayerSessionReservation(sessionId, rejectedState, banService.GetBanRejectionDetail(endPoint.Address));
+        }
+
+        if (!string.IsNullOrEmpty(options.Value.ServerPassword) && (!authenticationContext.ServerPassword.HasValue || authenticationContext.ServerPassword.Value != options.Value.ServerPassword))
+        {
+            MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.AUTHENTICATION_FAILED;
+            return new MultiplayerSessionReservation(sessionId, rejectedState);
+        }
+
+        if (!PlayerNameRegex().IsMatch(authenticationContext.Username))
+        {
+            MultiplayerSessionReservationState rejectedState = MultiplayerSessionReservationState.REJECTED | MultiplayerSessionReservationState.INCORRECT_USERNAME;
+            return new MultiplayerSessionReservation(sessionId, rejectedState);
+        }
+
+        return null;
+    }
+
+    /// <summary>
     ///     Finds another session which still holds <paramref name="playerName" /> but was opened from the same IP address as the new
     ///     connection. After a crash the server keeps that session until the connection times out, which would reject the player
     ///     coming back with their own name.
     /// </summary>
-    public bool TryFindStaleSession(string playerName, SessionId requestingSessionId, IPAddress requestingAddress, out SessionId staleSessionId)
+    private bool TryFindStaleSession(string playerName, SessionId requestingSessionId, IPAddress requestingAddress, out SessionId staleSessionId)
     {
         staleSessionId = default;
         SessionId? candidate = null;

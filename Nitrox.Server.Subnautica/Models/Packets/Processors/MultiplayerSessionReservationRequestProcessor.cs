@@ -9,12 +9,13 @@ using Nitrox.Server.Subnautica.Models.Serialization.World;
 
 namespace Nitrox.Server.Subnautica.Models.Packets.Processors;
 
-internal sealed class MultiplayerSessionReservationRequestProcessor(PlayerManager playerManager, SessionManager sessionManager, IKickPlayer playerKicker, Func<WorldService> worldServiceProvider, ILogger<MultiplayerSessionReservationRequestProcessor> logger)
+internal sealed class MultiplayerSessionReservationRequestProcessor(PlayerManager playerManager, SessionManager sessionManager, IKickPlayer playerKicker, ISessionActivity sessionActivity, Func<WorldService> worldServiceProvider, ILogger<MultiplayerSessionReservationRequestProcessor> logger)
     : IAnonPacketProcessor<MultiplayerSessionReservationRequest>
 {
     private readonly PlayerManager playerManager = playerManager;
     private readonly SessionManager sessionManager = sessionManager;
     private readonly IKickPlayer playerKicker = playerKicker;
+    private readonly ISessionActivity sessionActivity = sessionActivity;
     private readonly Func<WorldService> worldServiceProvider = worldServiceProvider;
     private readonly ILogger<MultiplayerSessionReservationRequestProcessor> logger = logger;
 
@@ -34,8 +35,10 @@ internal sealed class MultiplayerSessionReservationRequestProcessor(PlayerManage
         PlayerSettings playerSettings = packet.PlayerSettings;
         AuthenticationContext authenticationContext = packet.AuthenticationContext;
 
-        // A client which crashed leaves its session behind until the connection times out, and with it the player name: let the player come back right away
-        if (playerManager.TryFindStaleSession(authenticationContext.Username, context.Sender.SessionId, context.Sender.EndPoint.Address, out SessionId staleSessionId))
+        // A client which crashed leaves its session behind until the connection times out, and with it the player name: let the player come back right away.
+        // This runs before the reservation, so it checks the ban list, the password and the name itself first, and it only evicts a session that has been
+        // silent for 10 seconds: otherwise anybody behind the same address could kick a player who is still playing, again and again, without the password.
+        if (playerManager.TryFindEvictableSession(context.Sender.SessionId, context.Sender.EndPoint, authenticationContext, sessionActivity.GetTimeSinceLastPacket, out SessionId staleSessionId))
         {
             await EvictStaleSessionAsync(authenticationContext.Username, staleSessionId);
         }
