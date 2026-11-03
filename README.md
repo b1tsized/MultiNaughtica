@@ -62,7 +62,7 @@ It does **not** install Subnautica or any player model, and it adds no backgroun
 
 ## Install
 
-1. Download the `MultiNaughtica_..._win_x64.zip` file from the [Releases page](https://github.com/Alexander1170/MultiNaughtica/releases/latest), under **Assets**. Do not use **Source code (zip)** or the green **Code** button: they only hold the source and install nothing. Unzip the file anywhere (not into the Subnautica folder, not into `Program Files`).
+1. Download the `MultiNaughtica_..._win_x64.zip` file from the [Releases page](https://github.com/Alexander1170/MultiNaughtica/releases/latest), under **Assets**. Do not use **Source code (zip)** or the green **Code** button: they only hold the source and install nothing. To check that it is the published zip, run `Get-FileHash .\MultiNaughtica_<version>_win_x64.zip -Algorithm SHA256` in PowerShell and compare the result with the SHA-256 in the release notes; if they differ, do not install it. Unzip the file anywhere (not into the Subnautica folder, not into `Program Files`).
 2. Double-click **`Install.cmd`**. If Windows says "Windows protected your PC", click **More info**, then **Run anyway**. It installs the two runtimes if they are missing or too old, finds Subnautica, sets everything up and asks for the server address your host gave you (Enter skips that).
 3. Start **MultiNaughtica** from your desktop and press **PLAY MULTIPLAYER**. In the game choose **Multiplayer**, pick the server and join.
 

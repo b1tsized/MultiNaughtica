@@ -4,7 +4,7 @@
 
 You need Windows 10 or 11 (64 bit) and your own copy of **Subnautica** (the first game; Steam is what has been tested). Everything else is installed for you if it is missing: `README.md` lists exactly what goes on your PC.
 
-1. **Unzip** the zip (right-click it, Extract All) anywhere.
+1. **Unzip** the zip (right-click it, Extract All) anywhere. Before that, you can check that it is the zip that was published: in the folder of the zip, open PowerShell and run `Get-FileHash .\MultiNaughtica_<version>_win_x64.zip -Algorithm SHA256`, then compare the long number with the SHA-256 in the release notes (or the one your host sent you). If they differ, do not run `Install.cmd`.
 2. **Double-click `Install.cmd`** in the unzipped folder. If Windows says "Windows protected your PC", click **More info**, then **Run anyway**. It installs what is missing, finds Subnautica by itself and asks for the **server address your host gave you** (press Enter if you do not have it yet).
 3. Wait for **"Done, start MultiNaughtica from your desktop"**.
 4. **Start "MultiNaughtica" from your desktop** and press **PLAY MULTIPLAYER**. (The first time, the launcher may ask to restart as administrator: allow it.)
@@ -24,7 +24,7 @@ This build ships **no** player models. If you want the other players to see you 
 
 - Windows 10 or 11, 64 bit, Subnautica (the first game, updated; build 83031 was used for testing, Nitrox refuses a build older than 82304).
 - Run `Install.cmd` yourself first (the steps above): it installs the two Microsoft runtimes (.NET Runtime 10 and ASP.NET Core Runtime 10, x64) if they are missing or too old and sets everything up. If you prefer to do it by hand: `winget install Microsoft.DotNet.Runtime.10` and `winget install Microsoft.DotNet.AspNetCore.10`, unzip into a normal folder (not `Program Files`, not the Subnautica folder) and start `Nitrox.Launcher.exe`. Do not run the launcher of stock Nitrox at the same time: both have the same program name and patch the same game folder.
-- Give the friend **the same zip**, and tell them your server address (below).
+- Give the friend **the same zip** and its SHA-256 (`Get-FileHash <zip> -Algorithm SHA256` on your copy; `package_release.ps1` also writes it to `<zip>.sha256`), and tell them your server address (below).
 
 ### 1. Make a new world with this build
 
@@ -47,6 +47,8 @@ The server listens on **UDP 11000**.
 **Option A: Tailscale (no router changes, recommended).** Install Tailscale on both PCs and put them in the same tailnet (invite the friend, or share your PC with their account from the Tailscale admin page). The address to give the friend is the Tailscale address of your PC: the tray icon shows it, or run `tailscale ip -4` (it looks like `100.x.y.z`). Nothing is opened on the internet.
 
 **Option B: port forward.** Give your PC a fixed address on your network (a DHCP reservation) and forward **UDP 11000** to it (a port forward rule on your router: UDP, port 11000, to the PC that runs the server). The address to give the friend is your public IP address (it can change: if the friend suddenly cannot connect, look it up again). This opens a game server to the internet: set a server password and keep Windows updated.
+
+**Not a tunnel on your own PC.** If you share your server through a tunnel that runs on your own PC (playit.gg, ngrok and the like), every player seems to connect from this PC and becomes admin, because players on your own PC are admins. Set `LocalhostIsAdmin=false` in `server.cfg` (in the world's folder), and use `/login` with an admin password instead.
 
 The friend types the address in `Install.cmd` when it asks (or later in the game: **Multiplayer**, **Add Server**, address, port `11000`). Your own copy of the game always uses `127.0.0.1`.
 
