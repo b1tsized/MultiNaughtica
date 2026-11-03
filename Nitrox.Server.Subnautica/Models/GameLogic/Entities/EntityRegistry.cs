@@ -591,11 +591,31 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
 
         public void TransferChildren(Entity parent, Entity newParent, Func<Entity, bool> filter = null)
         {
-            List<Entity> childrenToMove = filter != null ?
-                [.. parent.ChildEntities.Where(filter)] : parent.ChildEntities;
+            // A client names both ids (UpdateBase.ChildrenTransfer): a child that is the new parent, or one of its ancestors, stays where it is. Moved under
+            // itself it would hold itself as a child, and the save, the initial sync and every later walk of the tree would loop
+            List<Entity> childrenToMove = [];
+            int refused = 0;
+            foreach (Entity child in parent.ChildEntities)
+            {
+                if (filter != null && !filter(child))
+                {
+                    continue;
+                }
+                if (WouldCreateCycle(child.Id, newParent.Id))
+                {
+                    refused++;
+                    continue;
+                }
+                childrenToMove.Add(child);
+            }
+            if (refused > 0)
+            {
+                logger.ZLogWarning($"Did not move {refused} children of {parent.Id} under {newParent.Id}, which is one of them or one of their descendants");
+            }
 
             // In case parent == newParent (which is actually a case used) we need removal to happen before adding the entities back
-            parent.ChildEntities.RemoveAll(entity => filter(entity));
+            HashSet<Entity> moving = new(childrenToMove, ReferenceEqualityComparer.Instance);
+            parent.ChildEntities.RemoveAll(moving.Contains);
 
             foreach (Entity childEntity in childrenToMove)
             {

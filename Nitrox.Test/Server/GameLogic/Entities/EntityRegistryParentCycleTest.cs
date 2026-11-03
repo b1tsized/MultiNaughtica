@@ -132,6 +132,48 @@ public class EntityRegistryParentCycleTest
     }
 
     [TestMethod]
+    public void TransferringChildrenUnderOneOfThemKeepsThatOneWhereItWas()
+    {
+        // UpdateBase.ChildrenTransfer names both ids: the new parent can be one of the children that move
+        PlayerEntity x = Add(root);
+        PlayerEntity y = Add(x);
+        PlayerEntity z = Add(x);
+
+        registry.TransferChildren(x.Id, y.Id, _ => true);
+
+        y.ParentId.Should().Be(x.Id);
+        y.ChildEntities.Should().ContainSingle().Which.Should().BeSameAs(z);
+        z.ParentId.Should().Be(y.Id);
+        x.ChildEntities.Should().ContainSingle().Which.Should().BeSameAs(y);
+    }
+
+    [TestMethod]
+    public void TransferringChildrenUnderADeeperDescendantKeepsItsAncestorWhereItWas()
+    {
+        PlayerEntity x = Add(root);
+        PlayerEntity y = Add(x);
+        PlayerEntity deep = Add(y);
+
+        registry.TransferChildren(x.Id, deep.Id, _ => true);
+
+        y.ParentId.Should().Be(x.Id);
+        deep.ChildEntities.Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public void TransferringChildrenToTheSameParentStillWorks()
+    {
+        // The water park edge case of BuildingManager: from and to are the same piece
+        PlayerEntity x = Add(root);
+        PlayerEntity y = Add(x);
+
+        registry.TransferChildren(x.Id, x.Id, _ => true);
+
+        x.ChildEntities.Should().ContainSingle().Which.Should().BeSameAs(y);
+        y.ParentId.Should().Be(x.Id);
+    }
+
+    [TestMethod]
     public void AnUnknownParentIsNoCycle()
     {
         PlayerEntity a = Add(root);
