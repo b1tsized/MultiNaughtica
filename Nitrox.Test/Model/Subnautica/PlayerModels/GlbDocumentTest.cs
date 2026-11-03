@@ -135,6 +135,58 @@ public class GlbDocumentTest
         act.Should().Throw<GlbException>().WithMessage("*accessor 99*");
     }
 
+    // A damaged or hostile file (models are downloaded from the internet) must be refused with a GlbException, which every loader catches, and not crash the game
+    // with an overflow, an out-of-range read or an allocation of gigabytes
+
+    [TestMethod]
+    public void ANegativeAccessorCountIsRefused()
+    {
+        GlbDocument document = Synthetic(json => json["accessors"]![POSITION]!["count"] = -5);
+
+        Action act = () => document.ReadFloats(POSITION);
+
+        act.Should().Throw<GlbException>();
+    }
+
+    [TestMethod]
+    public void ANegativeByteStrideIsRefused()
+    {
+        GlbDocument document = Synthetic(json => json["bufferViews"]![POSITION]!["byteStride"] = -1000);
+
+        Action act = () => document.ReadFloats(POSITION);
+
+        act.Should().Throw<GlbException>();
+    }
+
+    [TestMethod]
+    public void ANegativeByteOffsetIsRefused()
+    {
+        GlbDocument document = Synthetic(json => json["accessors"]![POSITION]!["byteOffset"] = -100000);
+
+        Action act = () => document.ReadFloats(POSITION);
+
+        act.Should().Throw<GlbException>();
+    }
+
+    [TestMethod]
+    public void AnAccessorWithTooManyValuesIsRefused()
+    {
+        // 16,777,217 one-byte values: inside the binary chunk, but one more than the reader allocates for a single accessor
+        const int COUNT = 16_777_217;
+        JObject json = new()
+        {
+            ["asset"] = new JObject { ["version"] = "2.0" },
+            ["buffers"] = new JArray(new JObject { ["byteLength"] = COUNT }),
+            ["bufferViews"] = new JArray(new JObject { ["buffer"] = 0, ["byteOffset"] = 0, ["byteLength"] = COUNT }),
+            ["accessors"] = new JArray(new JObject { ["bufferView"] = 0, ["componentType"] = 5121, ["count"] = COUNT, ["type"] = "SCALAR" })
+        };
+        GlbDocument document = GlbDocument.Parse(SyntheticGlb.Assemble(System.Text.Encoding.UTF8.GetBytes(json.ToString()), new byte[COUNT]));
+
+        Action act = () => document.GetAccessor(0);
+
+        act.Should().Throw<GlbException>();
+    }
+
     [TestMethod]
     public void ThePaddingOfTheChunksDoesNotConfuseTheReader()
     {

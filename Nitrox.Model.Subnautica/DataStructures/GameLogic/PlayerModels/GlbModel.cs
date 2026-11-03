@@ -55,6 +55,9 @@ public sealed class GlbClip
 /// </summary>
 public sealed class GlbModel
 {
+    /// <summary>The most nodes a file may have: a Mixamo skeleton with its meshes has well under a hundred.</summary>
+    public const int MAX_NODES = 4096;
+
     private GlbModel(GlbDocument document)
     {
         Document = document;
@@ -217,9 +220,41 @@ public sealed class GlbModel
         return new GlbClipData(name, duration, tracks, Nodes.Count);
     }
 
+    /// <summary>
+    ///     The skeleton is walked from child to parent (<see cref="PlayerModelRig.MixamoRest" /> and others): nodes whose parent links loop would recurse until the
+    ///     stack overflowed, which closes the game. With one parent per node, a walk up from any node either reaches a root or comes back to a node of the same
+    ///     walk; each node is walked once (O(n)).
+    /// </summary>
+    private static void RefuseCycles(int[] parents)
+    {
+        // 0 not seen yet, 1 on the walk that is going on, 2 known to lead to a root
+        byte[] state = new byte[parents.Length];
+        for (int start = 0; start < parents.Length; start++)
+        {
+            int node = start;
+            while (node >= 0 && state[node] == 0)
+            {
+                state[node] = 1;
+                node = parents[node];
+            }
+            if (node >= 0 && state[node] == 1)
+            {
+                throw new GlbException($"the parent links of node {node} form a cycle");
+            }
+            for (node = start; node >= 0 && state[node] == 1; node = parents[node])
+            {
+                state[node] = 2;
+            }
+        }
+    }
+
     private void ReadNodes()
     {
         JArray nodes = Document.Array("nodes");
+        if (nodes.Count > MAX_NODES)
+        {
+            throw new GlbException($"the file has {nodes.Count} nodes, more than the {MAX_NODES} the reader accepts");
+        }
         int[] parents = Enumerable.Repeat(-1, nodes.Count).ToArray();
         for (int i = 0; i < nodes.Count; i++)
         {
@@ -232,10 +267,19 @@ public sealed class GlbModel
                     {
                         throw new GlbException($"node {i} has a child {index} that does not exist");
                     }
+                    if (index == i)
+                    {
+                        throw new GlbException($"node {i} is its own child");
+                    }
+                    if (parents[index] >= 0)
+                    {
+                        throw new GlbException($"node {index} is the child of two nodes ({parents[index]} and {i})");
+                    }
                     parents[index] = i;
                 }
             }
         }
+        RefuseCycles(parents);
         List<GlbNode> list = new(nodes.Count);
         for (int i = 0; i < nodes.Count; i++)
         {

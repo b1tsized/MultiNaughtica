@@ -58,6 +58,9 @@ public sealed class GlbAccessor
 public sealed class GlbDocument
 {
     public const uint MAGIC = 0x46546C67;
+
+    /// <summary>The most values (count times components) one accessor may have: 64 MB of floats, far above what a player model holds.</summary>
+    public const int MAX_ACCESSOR_VALUES = 16_777_216;
     private const uint CHUNK_JSON = 0x4E4F534A;
     private const uint CHUNK_BIN = 0x004E4942;
 
@@ -185,13 +188,24 @@ public sealed class GlbDocument
         {
             stride = elementSize;
         }
-        int offset = ((int?)view["byteOffset"] ?? 0) + ((int?)accessor["byteOffset"] ?? 0);
-        long lastByte = count == 0 ? offset : (long)offset + (long)(count - 1) * stride + elementSize;
+        long offset = (long)((int?)view["byteOffset"] ?? 0) + ((int?)accessor["byteOffset"] ?? 0);
+        // Negative numbers slipped past the end-of-chunk check below and then read outside the chunk or allocated a negative array
+        if (count < 0 || stride < 0 || offset < 0)
+        {
+            throw new GlbException($"accessor {index} has a negative count, offset or stride");
+        }
+        // The reader allocates every value of an accessor at once: a file that asks for more must not make the game allocate gigabytes
+        if ((long)count * components > MAX_ACCESSOR_VALUES)
+        {
+            throw new GlbException($"accessor {index} has {(long)count * components} values, more than the {MAX_ACCESSOR_VALUES} the reader accepts");
+        }
+        long lastByte = count == 0 ? offset : offset + (long)(count - 1) * stride + elementSize;
         if (lastByte > binLength)
         {
             throw new GlbException($"accessor {index} reads past the end of the binary chunk");
         }
-        return new GlbAccessor(componentType, count, components, (bool?)accessor["normalized"] ?? false, offset, stride, FloatsOf(accessor["min"]), FloatsOf(accessor["max"]));
+        // offset is at most binLength here, so it fits an int
+        return new GlbAccessor(componentType, count, components, (bool?)accessor["normalized"] ?? false, (int)offset, stride, FloatsOf(accessor["min"]), FloatsOf(accessor["max"]));
     }
 
     /// <summary>All the values of an accessor as floats (count times components of them); integer components are converted, normalised ones to 0..1 (or -1..1).</summary>
