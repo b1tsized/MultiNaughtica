@@ -278,18 +278,7 @@ internal class WorldService : IHostedService
                 logger.ZLogWarningOnce($"Please consider reporting the above issues on the Discord server.");
             }
 
-            foreach (Entity entity in entityData.Entities)
-            {
-                if (entity.ParentId != null && entitiesById.TryGetValue(entity.ParentId, out Entity parentEntity))
-                {
-                    parentEntity.ChildEntities.Add(entity);
-
-                    if (entity is WorldEntity worldEntity && parentEntity is WorldEntity parentWorldEntity)
-                    {
-                        worldEntity.Transform.SetParent(parentWorldEntity.Transform, false);
-                    }
-                }
-            }
+            EntityParentLinks.Link(entityData.Entities, entitiesById, logger);
         }
 
         void GlobalRootDataPostProcessing(GlobalRootData globalRootData)

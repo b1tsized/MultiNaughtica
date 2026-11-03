@@ -132,6 +132,21 @@ public class EntityRegistryParentCycleTest
     }
 
     [TestMethod]
+    public void ANestedChildThatNamesItselfAsItsParentGetsItsContainerAsParent()
+    {
+        // The children of a spawned entity are registered without AddToParent; a child naming itself was saved like that, and the world then failed to load
+        PlayerEntity container = New(new NitroxId(), root.Id);
+        NitroxId childId = new();
+        PlayerEntity child = New(childId, childId);
+        container.ChildEntities.Add(child);
+
+        registry.AddOrUpdate(container);
+
+        child.ParentId.Should().Be(container.Id);
+        child.ChildEntities.Should().BeEmpty();
+    }
+
+    [TestMethod]
     public void TransferringChildrenUnderOneOfThemKeepsThatOneWhereItWas()
     {
         // UpdateBase.ChildrenTransfer names both ids: the new parent can be one of the children that move

@@ -87,7 +87,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
             }
 
             AddToParent(entity);
-            AddEntitiesIgnoringDuplicate(entity.ChildEntities);
+            AddEntitiesIgnoringDuplicate(entity.ChildEntities, entity);
         }
 
         public void AddEntities(IEnumerable<Entity> entities)
@@ -108,10 +108,20 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
         /// (the children that are in the entity data AND in the global root data are registered as the objects of the global root tree, which their parents hold).
         /// A freshly generated batch must not use this: use <see cref="AddEntitiesKeepingExisting" />.
         /// </remarks>
-        public void AddEntitiesIgnoringDuplicate(IEnumerable<Entity> entities)
+        public void AddEntitiesIgnoringDuplicate(IEnumerable<Entity> entities) => AddEntitiesIgnoringDuplicate(entities, null);
+
+        /// <param name="container">The entity whose children these are, or null for a top level list.</param>
+        private void AddEntitiesIgnoringDuplicate(IEnumerable<Entity> entities, Entity? container)
         {
             foreach (Entity entity in entities)
             {
+                // A child listed under its container but naming itself as its parent (a client builds these trees) was saved like that, and the load then
+                // linked it under itself: the world no longer started. The tree says where it is
+                if (container != null && entity.ParentId != null && entity.ParentId.Equals(entity.Id))
+                {
+                    logger.ZLogWarning($"{entity.Id} named itself as its parent: it is kept under {container.Id}, where it is listed");
+                    entity.ParentId = container.Id;
+                }
                 if (entitiesById.TryGetValue(entity.Id, out Entity currentEntity))
                 {
                     entitiesById.TryUpdate(entity.Id, entity, currentEntity);
@@ -120,7 +130,7 @@ namespace Nitrox.Server.Subnautica.Models.GameLogic.Entities
                 {
                     entitiesById.TryAdd(entity.Id, entity);
                 }
-                AddEntitiesIgnoringDuplicate(entity.ChildEntities);
+                AddEntitiesIgnoringDuplicate(entity.ChildEntities, entity);
             }
         }
 
