@@ -97,6 +97,18 @@ public class PdaManagerTimeCapsuleTest
     }
 
     [TestMethod]
+    public void ContentUnderAnotherKeyIsCleanedBeforeItIsRelayed()
+    {
+        // Not stored (ContentForAnotherKeyIsNotStored), but the processor still relays the packet that carries it, and a client files content under its own key
+        PdaManager manager = NewManager();
+        TimeCapsuleContentData content = Wire("capsule-2", "//evil.example/a.png");
+
+        manager.AddEncyclopediaEntry("capsule-1", content).Should().BeTrue();
+
+        content.ImageUrl.Should().BeEmpty();
+    }
+
+    [TestMethod]
     public void AnOverlongKeyIsRefused()
     {
         PdaManager manager = NewManager();

@@ -130,9 +130,10 @@ internal sealed class PdaManager(ILogger<PdaManager> logger) : ISummarize
                     return false;
                 }
                 PdaState.EncyclopediaEntries.Add(entry);
+                // Cleaned whatever its key: content under another key is not stored, but the packet that carries it is still relayed, and a client files it under its own key
+                content?.Sanitize();
                 if (content != null && content.Key == entry)
                 {
-                    content.Sanitize();
                     if (PdaState.TimeCapsuleContents.Count < MAX_TIME_CAPSULE_CONTENTS)
                     {
                         PdaState.TimeCapsuleContents.Add(content);
