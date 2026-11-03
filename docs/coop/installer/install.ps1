@@ -179,26 +179,31 @@ function Get-OfficialRuntimeInstaller([string]$kind) {
     return [pscustomobject]@{ Name = $wanted; Url = $file.url; Sha512 = $file.hash.ToLowerInvariant() }
 }
 
-function Get-VerifiedRuntimeInstaller([string]$kind, [string]$label) {
-    # Downloads the installer from Microsoft and checks it against the checksum Microsoft publishes; an installer that does not match is deleted and never run
+function Install-RuntimeFromMicrosoft([string]$kind, [string]$label) {
+    # Downloads the installer from Microsoft into a folder of its own, checks it against the checksum Microsoft publishes and runs it; an installer that does
+    # not match is never run. It runs elevated, so the file stays open from the check until the installer has ended, shared for reading only: no other
+    # program can change, rename or delete it in between and have its own file run as administrator. The folder is removed afterwards, whatever happened.
     Say "  Downloading the official $label installer from Microsoft..."
     $info = Get-OfficialRuntimeInstaller $kind
-    $target = Join-Path $env:TEMP $info.Name
-    Invoke-WebRequest -Uri $info.Url -OutFile $target -UseBasicParsing -TimeoutSec 600
-    $hash = (Get-FileHash -LiteralPath $target -Algorithm SHA512).Hash.ToLowerInvariant()
-    if ($hash -ne $info.Sha512) {
-        Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
-        throw "The downloaded $label installer does not match the checksum Microsoft publishes. It was NOT run."
+    $folder = Join-Path $env:TEMP ("MultiNaughtica-runtime-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $folder | Out-Null
+    $stream = $null
+    try {
+        $target = Join-Path $folder $info.Name
+        Invoke-WebRequest -Uri $info.Url -OutFile $target -UseBasicParsing -TimeoutSec 600
+        $stream = [System.IO.File]::Open($target, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+        $sha512 = [System.Security.Cryptography.SHA512]::Create()
+        try { $hash = -join ($sha512.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) }
+        finally { $sha512.Dispose() }
+        if ($hash -ne $info.Sha512) { throw "The downloaded $label installer does not match the checksum Microsoft publishes. It was NOT run." }
+        Say '  Checksum matches the one Microsoft publishes. Installing (Windows will ask for permission)...'
+        $process = Start-Process -FilePath $target -ArgumentList '/install', '/quiet', '/norestart' -Verb RunAs -Wait -PassThru
+        if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) { throw "The $label installer ended with code $($process.ExitCode)." }
     }
-    return $target
-}
-
-function Install-RuntimeFromMicrosoft([string]$kind, [string]$label) {
-    $target = Get-VerifiedRuntimeInstaller $kind $label
-    Say '  Checksum matches the one Microsoft publishes. Installing (Windows will ask for permission)...'
-    $process = Start-Process -FilePath $target -ArgumentList '/install', '/quiet', '/norestart' -Verb RunAs -Wait -PassThru
-    Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
-    if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) { throw "The $label installer ended with code $($process.ExitCode)." }
+    finally {
+        if ($stream) { $stream.Dispose() }
+        Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Ensure-Runtime([string]$sharedName, [string]$label, [string]$wingetId, [string]$kind, [string]$minimum = '') {
