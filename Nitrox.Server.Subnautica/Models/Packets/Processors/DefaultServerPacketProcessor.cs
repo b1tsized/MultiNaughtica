@@ -32,7 +32,13 @@ internal sealed class DefaultServerPacketProcessor(ILogger<DefaultServerPacketPr
         typeof(DebugStoryDump),
         typeof(DebugSyncSamplerControl),
         typeof(DebugWarpInto),
-        typeof(ServerSaving)
+        typeof(ServerSaving),
+        // The server's own notices: relayed, one packet disconnected every other player with the sender's text, stopped their clients, removed a player who is
+        // still there, or showed them admin rights they do not have
+        typeof(PlayerKicked),
+        typeof(ServerStopped),
+        typeof(Disconnect),
+        typeof(PermsChanged)
     ];
 
     private readonly ILogger<DefaultServerPacketProcessor> logger = logger;
