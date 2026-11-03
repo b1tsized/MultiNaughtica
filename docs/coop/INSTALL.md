@@ -48,7 +48,7 @@ The server listens on **UDP 11000**.
 
 **Option B: port forward.** Give your PC a fixed address on your network (a DHCP reservation) and forward **UDP 11000** to it (a port forward rule on your router: UDP, port 11000, to the PC that runs the server). The address to give the friend is your public IP address (it can change: if the friend suddenly cannot connect, look it up again). This opens a game server to the internet: set a server password and keep Windows updated.
 
-**Not a tunnel on your own PC.** If you share your server through a tunnel that runs on your own PC (playit.gg, ngrok and the like), every player seems to connect from this PC and becomes admin, because players on your own PC are admins. Set `LocalhostIsAdmin=false` in `server.cfg` (in the world's folder), and use `/login` with an admin password instead.
+**Not a tunnel on your own PC.** If you share your server through a tunnel that runs on your own PC (playit.gg, ngrok and the like), every player seems to connect from this PC and becomes admin, because players on your own PC are admins. Set `LocalhostIsAdmin=false` in `server.cfg` (in the world's folder) and, in the same file, `AdminPassword=` a password of your own (with no admin password, `/login` is switched off and nobody can become admin from the game). Then type `/login <your admin password>` in the game to get admin.
 
 The friend types the address in `Install.cmd` when it asks (or later in the game: **Multiplayer**, **Add Server**, address, port `11000`). Your own copy of the game always uses `127.0.0.1`.
 
