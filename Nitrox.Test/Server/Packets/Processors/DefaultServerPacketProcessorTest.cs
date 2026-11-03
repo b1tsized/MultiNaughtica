@@ -101,6 +101,45 @@ public class DefaultServerPacketProcessorTest
     }
 
     [TestMethod]
+    public async Task ADebugConsoleCommandThatAClientSendsIsNotRelayed()
+    {
+        // Only the server sends it (/console, admin): relayed, any player could run console commands in every other player's game of a Debug build
+        await relay.Process(context, new DebugConsoleCommand("goal story Goal_Disable_Gun"));
+
+        packetSender.SentToOthers.Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public async Task TheServersOwnNoticesThatAClientSendsAreNotRelayed()
+    {
+        // Only the server sends these: relayed, one packet disconnected every other player with the sender's text (PlayerKicked), stopped their clients
+        // (ServerStopped), removed a player who is still there (Disconnect) or showed them admin rights they do not have (PermsChanged)
+        Packet[] serverOnly = [new PlayerKicked("You have been kicked"), new ServerStopped(), new Disconnect(alice.SessionId), new PermsChanged(Perms.ADMIN)];
+
+        foreach (Packet packet in serverOnly)
+        {
+            await relay.Process(context, packet);
+        }
+
+        packetSender.SentToOthers.Select(sent => sent.Packet.GetType().Name).Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public void EveryDebugPacketAndTheSavingNoticeAreBlacklisted()
+    {
+        // The debug packets come from admin commands and the saving notice from the save loop: none has a processor on the server, so each must be on the
+        // blacklist, or the default processor passes a client's copy on to everybody. A new debug packet fails here until it is listed.
+        HashSet<Type> blacklist = (HashSet<Type>)typeof(DefaultServerPacketProcessor).GetField("defaultPacketProcessorBlacklist", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(relay)!;
+        List<Type> serverOnly = typeof(DebugConsoleCommand).Assembly.GetTypes()
+                                                           .Where(type => type is { IsClass: true, IsAbstract: false } && typeof(Packet).IsAssignableFrom(type) && type.Name.StartsWith("Debug"))
+                                                           .Append(typeof(ServerSaving))
+                                                           .ToList();
+
+        serverOnly.Should().HaveCountGreaterThanOrEqualTo(8, "the scan has to find the debug packets for this test to mean anything");
+        serverOnly.Where(type => !blacklist.Contains(type)).Select(type => type.Name).Should().BeEmpty();
+    }
+
+    [TestMethod]
     public async Task TheAnswerToAClaimThatAClientSendsIsNotRelayedToTheOtherPlayers()
     {
         await relay.Process(context, new CraftingClaimResponse(1, CraftingClaimOutcome.Granted, []));

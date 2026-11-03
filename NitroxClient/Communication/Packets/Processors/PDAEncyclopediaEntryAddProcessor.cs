@@ -64,6 +64,9 @@ internal sealed class PDAEncyclopediaEntryAddProcessor : IClientPacketProcessor<
             return;
         }
 
+        // The content comes from another player (or a server of another build): the game downloads whatever image address it is given, so only a relative
+        // address on the game's own image host may reach it
+        content.Sanitize();
         TimeCapsuleContentProvider.Set(content.Key, new TimeCapsuleContent
         {
             title = content.Title,

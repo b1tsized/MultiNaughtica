@@ -88,5 +88,36 @@ namespace Nitrox.Model.DataStructures.Unity
             grandgrandchild1.Position.Equals(afterChildGlobalPosition, TOLERANCE).Should().BeTrue($"Expected: {afterChildGlobalPosition} Found: {grandgrandchild1.Position}");
             grandgrandchild1.Rotation.Equals(afterChildGlobalRotation, TOLERANCE).Should().BeTrue($"Expected: {afterChildGlobalRotation} Found: {grandgrandchild1.Rotation}");
         }
+
+        // A parent cycle made every position read recurse until the stack overflowed, which kills the process: it has to be refused with an exception that can be caught
+        [TestMethod]
+        [DataRow(true)]
+        [DataRow(false)]
+        public void SettingATransformAsItsOwnParentThrows(bool worldPositionStays)
+        {
+            NitroxTransform transform = new(new NitroxVector3(1, 2, 3), NitroxQuaternion.Identity, NitroxVector3.One);
+
+            Action act = () => transform.SetParent(transform, worldPositionStays);
+
+            act.Should().Throw<InvalidOperationException>();
+            transform.Parent.Should().BeNull();
+        }
+
+        [TestMethod]
+        [DataRow(true)]
+        [DataRow(false)]
+        public void SettingADescendantAsParentThrows(bool worldPositionStays)
+        {
+            NitroxTransform a = new(new NitroxVector3(1, 2, 3), NitroxQuaternion.Identity, NitroxVector3.One);
+            NitroxTransform b = new(new NitroxVector3(4, 5, 6), NitroxQuaternion.Identity, NitroxVector3.One);
+            NitroxTransform c = new(new NitroxVector3(7, 8, 9), NitroxQuaternion.Identity, NitroxVector3.One);
+            b.SetParent(a, false);
+            c.SetParent(b, false);
+
+            Action act = () => a.SetParent(c, worldPositionStays);
+
+            act.Should().Throw<InvalidOperationException>();
+            a.Parent.Should().BeNull();
+        }
     }
 }

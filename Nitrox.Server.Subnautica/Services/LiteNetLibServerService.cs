@@ -20,7 +20,7 @@ using Nitrox.Server.Subnautica.Models.Packets.Core;
 
 namespace Nitrox.Server.Subnautica.Services;
 
-internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, IKickPlayer, ISessionCleaner
+internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, IKickPlayer, ISessionCleaner, ISessionActivity
 {
     private readonly Dictionary<int, PeerContext> contextByPeerId = [];
     private readonly Dictionary<SessionId, PeerContext> contextBySessionId = [];
@@ -32,6 +32,7 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
     private readonly PacketRegistryService packetRegistryService;
     private readonly PacketSerializationService packetSerializationService;
     private readonly PlayerManager playerManager;
+    private readonly RefusalLogLimiter refusalLogLimiter = new();
     private readonly NetManager server;
     private readonly SessionManager sessionManager;
     private readonly TaskQueueService taskQueueService;
@@ -181,6 +182,15 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
         return true;
     }
 
+    public TimeSpan? GetTimeSinceLastPacket(SessionId sessionId)
+    {
+        lock (contextLock)
+        {
+            // LiteNetLib counts it in milliseconds and resets it on every packet received from the peer, keep-alive pings included
+            return contextBySessionId.TryGetValue(sessionId, out PeerContext context) ? TimeSpan.FromMilliseconds(context.Peer.TimeSinceLastPacket) : null;
+        }
+    }
+
     async Task IEvent<ISessionCleaner.Args>.OnEventAsync(ISessionCleaner.Args args)
     {
         Disconnect disconnect = new(args.Session.Id);
@@ -192,8 +202,13 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
         string sentKey = request.Data.IsNull || request.Data.AvailableBytes == 0 ? "" : request.Data.GetString();
         if (sentKey != CoopProtocol.ConnectionKey)
         {
-            // Names this server's own key in the refusal so that a client of this fork can tell the player which build the server is
-            logger.ZLogWarning($"Refused a connection from {request.RemoteEndPoint}: {CoopProtocol.ExplainRefusal(sentKey)}");
+            // Names this server's own key in the refusal so that a client of this fork can tell the player which build the server is.
+            // The log line is limited: a request is one datagram with any source address, and logging every one let anybody fill the disk
+            if (refusalLogLimiter.ShouldLog(request.RemoteEndPoint.Address, DateTimeOffset.UtcNow, out int suppressed))
+            {
+                string left = suppressed > 0 ? $" ({suppressed} more refusals not logged)" : "";
+                logger.ZLogWarning($"Refused a connection from {request.RemoteEndPoint}: {CoopProtocol.ExplainRefusal(sentKey)}{left}");
+            }
             NetDataWriter refusal = new();
             refusal.Put(CoopProtocol.ConnectionKey);
             request.Reject(refusal);

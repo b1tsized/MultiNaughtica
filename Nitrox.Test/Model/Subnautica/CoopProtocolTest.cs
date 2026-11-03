@@ -127,6 +127,16 @@ public class CoopProtocolTest
     }
 
     [TestMethod]
+    public void ExplainRefusal_ShowsControlCharactersAsQuestionMarks()
+    {
+        // The key comes from whoever sends a connection request and ends up in the server log: a line break in it would forge a log line of its own
+        string explanation = CoopProtocol.ExplainRefusal("abc\r\n[fake] line");
+
+        explanation.Should().Contain("abc??[fake] line");
+        explanation.Should().NotContain("\r").And.NotContain("\n");
+    }
+
+    [TestMethod]
     public void DescribeRefusal_TellsAStockServerFromAnotherCoopBuild()
     {
         CoopProtocol.DescribeRefusal(null).Should().Contain("stock Nitrox").And.Contain("same co-op zip");

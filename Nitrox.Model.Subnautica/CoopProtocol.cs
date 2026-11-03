@@ -51,7 +51,8 @@ public static class CoopProtocol
     /// </summary>
     public static string ExplainRefusal(string? sentKey)
     {
-        string sent = string.IsNullOrEmpty(sentKey) ? "no key" : $"'{(sentKey!.Length > 80 ? sentKey.Substring(0, 80) : sentKey)}'";
+        // The key is whatever the sender put in its request: cut, and with its control characters shown as '?' so that a line break cannot forge a line of the server log
+        string sent = string.IsNullOrEmpty(sentKey) ? "no key" : $"'{new string((sentKey!.Length > 80 ? sentKey.Substring(0, 80) : sentKey).Select(c => char.IsControl(c) ? '?' : c).ToArray())}'";
         if (sentKey == STOCK_CONNECTION_KEY)
         {
             return $"it sent {sent}, which is what stock Nitrox sends: that player has to install the co-op build ({Describe()}) of this server";

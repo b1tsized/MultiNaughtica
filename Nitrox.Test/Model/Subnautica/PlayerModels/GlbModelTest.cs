@@ -96,6 +96,74 @@ public class GlbModelTest
         act.Should().Throw<GlbException>().WithMessage("*triangles*");
     }
 
+    // The skeleton is walked from child to parent (PlayerModelRig.MixamoRest and others): a node that is its own ancestor recursed until the stack overflowed, which
+    // closes the game, so the reader refuses every shape that is not a tree
+
+    [TestMethod]
+    public void ANodeThatIsItsOwnChildIsRefused()
+    {
+        Action act = () => Synthetic(json => json["nodes"]![1]!["children"] = new JArray(1));
+
+        act.Should().Throw<GlbException>();
+    }
+
+    [TestMethod]
+    public void ANodeWithTwoParentsIsRefused()
+    {
+        Action act = () => Synthetic(json => json["nodes"]![3]!["children"] = new JArray(2));
+
+        act.Should().Throw<GlbException>();
+    }
+
+    [TestMethod]
+    public void NodesThatFormACycleAreRefused()
+    {
+        // boneA -> boneB -> boneA, and nothing else names boneA as a child
+        Action act = () => Synthetic(json =>
+        {
+            json["nodes"]![0]!["children"] = new JArray(3);
+            json["nodes"]![2]!["children"] = new JArray(1);
+        });
+
+        act.Should().Throw<GlbException>();
+    }
+
+    [TestMethod]
+    public void TooManyNodesAreRefused()
+    {
+        Action act = () => Synthetic(json => AddNodes(json, 4097 - 4, chained: false));
+
+        act.Should().Throw<GlbException>();
+    }
+
+    [TestMethod]
+    public void AChainOfTwoHundredNodesStillLoads()
+    {
+        GlbModel model = Synthetic(json => AddNodes(json, 200, chained: true));
+
+        model.Nodes.Should().HaveCount(204);
+        model.Nodes[203].Parent.Should().Be(202);
+        Action rest = () => PlayerModelRig.MixamoRest(model);
+        rest.Should().NotThrow();
+    }
+
+    /// <summary>Appends <paramref name="count" /> nodes after the four of the synthetic file, the first under the root; each one under the one before when chained.</summary>
+    private static void AddNodes(JObject json, int count, bool chained)
+    {
+        JArray nodes = (JArray)json["nodes"]!;
+        int first = nodes.Count;
+        ((JArray)nodes[0]!["children"]!).Add(first);
+        for (int i = 0; i < count; i++)
+        {
+            JObject node = new() { ["name"] = $"extra{i}" };
+            if (chained && i < count - 1)
+            {
+                node["children"] = new JArray(first + i + 1);
+            }
+            nodes.Add(node);
+        }
+    }
+
     [TestMethod]
     public void ANodeGivenAsAMatrixIsRefused()
     {
