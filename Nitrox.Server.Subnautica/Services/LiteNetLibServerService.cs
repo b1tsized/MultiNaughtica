@@ -32,6 +32,7 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
     private readonly PacketRegistryService packetRegistryService;
     private readonly PacketSerializationService packetSerializationService;
     private readonly PlayerManager playerManager;
+    private readonly RefusalLogLimiter refusalLogLimiter = new();
     private readonly NetManager server;
     private readonly SessionManager sessionManager;
     private readonly TaskQueueService taskQueueService;
@@ -201,8 +202,13 @@ internal sealed class LiteNetLibServerService : IHostedService, IPacketSender, I
         string sentKey = request.Data.IsNull || request.Data.AvailableBytes == 0 ? "" : request.Data.GetString();
         if (sentKey != CoopProtocol.ConnectionKey)
         {
-            // Names this server's own key in the refusal so that a client of this fork can tell the player which build the server is
-            logger.ZLogWarning($"Refused a connection from {request.RemoteEndPoint}: {CoopProtocol.ExplainRefusal(sentKey)}");
+            // Names this server's own key in the refusal so that a client of this fork can tell the player which build the server is.
+            // The log line is limited: a request is one datagram with any source address, and logging every one let anybody fill the disk
+            if (refusalLogLimiter.ShouldLog(request.RemoteEndPoint.Address, DateTimeOffset.UtcNow, out int suppressed))
+            {
+                string left = suppressed > 0 ? $" ({suppressed} more refusals not logged)" : "";
+                logger.ZLogWarning($"Refused a connection from {request.RemoteEndPoint}: {CoopProtocol.ExplainRefusal(sentKey)}{left}");
+            }
             NetDataWriter refusal = new();
             refusal.Put(CoopProtocol.ConnectionKey);
             request.Reject(refusal);
